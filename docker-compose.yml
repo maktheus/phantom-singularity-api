@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://phantom:phantom@db:5432/phantom
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_URL: http://ollama:11434
+      JWT_SECRET: change_me_in_production_use_openssl_rand_hex_64
+      JWT_ACCESS_TTL_MINUTES: 10080
+      JWT_REFRESH_TTL_DAYS: 30
+      GOOGLE_CLIENT_ID: "your_google_client_id.apps.googleusercontent.com"
+      ENV: development
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: .
+    command: celery -A app.tasks.ingest_pdf worker --loglevel=info -Q pdf_ingestion
+    volumes:
+      - ./app:/app/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://phantom:phantom@db:5432/phantom
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_URL: http://ollama:11434
+      ENV: development
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: phantom
+      POSTGRES_PASSWORD: phantom
+      POSTGRES_DB: phantom
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phantom"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  pgdata:
+  ollama_data:
